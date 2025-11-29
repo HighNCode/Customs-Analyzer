@@ -11,10 +11,10 @@ def generate_sql(schema, user_query: str):
 You are an expert SQLite query generator.
 
 RULES (IMPORTANT):
-- Table name is `customs`
+- Table name is 'customs'
 - USE COLUMN NAMES EXACTLY AS PROVIDED IN SCHEMA.
-- IF A COLUMN HAS SPACES OR SPECIAL CHARACTERS, WRAP IT IN BACKTICKS.
-- NEVER modify column names (do NOT replace spaces with `_`).
+- IF A COLUMN HAS SPACES OR SPECIAL CHARACTERS, WRAP IT IN SINGLE QUOTES.
+- NEVER modify column names (do NOT replace spaces with '_').
 - Return ONLY SQL. No explanation.
 
 Here is the exact schema:

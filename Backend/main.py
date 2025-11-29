@@ -71,6 +71,7 @@ def run_query_stream(req: QueryRequest):
     session_id = req.session_id
     schema = get_schema()
     sql = generate_sql(schema, user_query).strip()
+    print(sql)
     sql = sanitize_sql(sql)
 
     try:
