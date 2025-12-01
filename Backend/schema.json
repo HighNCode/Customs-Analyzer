@@ -1,0 +1,24 @@
+{
+    "GD_NO_Complete": "Unique Goods Declaration (GD) reference number for the shipment.",
+    "NTN": "Importer's National Tax Number issued by FBR.",
+    "IMPORTER NAME": "Registered name of the importing entity.",
+    "HS CODE": "Harmonized System code identifying the product classification.",
+    "ITE DESCRIPTION": "Text description of the imported item.",
+    "Declared Unit PRICE": "Unit price declared by the importer in the GD.",
+    "ORIGIN COUNTRY": "Country where the goods were originally manufactured or sourced.",
+    "ASSD QTY": "Quantity of goods assessed by customs.",
+    "ASSD UNIT": "Measurement unit used for the assessed quantity.",
+    "ASSD UNIT PRICE": "Unit price determined/assessed by customs.",
+    "ASSD CURR": "Currency used for the assessed value.",
+    "ASSESSED IMPORT VALUE RS": "Total import value assessed by customs in PKR.",
+    "Customs Duty PAID": "Amount of customs duty paid.",
+    "Sales Tax PAID": "Sales tax amount paid on the imported goods.",
+    "Income Tax PAID": "Withholding income tax paid at import.",
+    "Additional Custom Duty PAID": "Additional customs duty amount paid.",
+    "ADD SALES TAX PAID": "Additional sales tax amount paid.",
+    "REG.DUTY PAID": "Regulatory duty amount paid.",
+    "GST PAID": "General sales tax amount paid.",
+    "Total": "Total duties and taxes paid for the consignment.",
+    "SRO": "Relevant Statutory Regulatory Order governing duty/tax exemptions or rates."
+  }
+  

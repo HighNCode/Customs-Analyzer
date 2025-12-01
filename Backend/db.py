@@ -1,6 +1,7 @@
 # db.py
 import pandas as pd
 from sqlalchemy import create_engine, text
+import json
 
 DATABASE_URL = "sqlite:///customs.db"
 engine = create_engine(DATABASE_URL)
@@ -19,4 +20,13 @@ def get_schema():
         rows = conn.execute(text(schema_query)).fetchall()
 
     schema = [{"column": r[1], "type": r[2]} for r in rows]
+    return schema
+
+
+def attach_schema_descriptions(schema):
+    # attach schema descriptions to the schema, schema is the list of dictionaries with column name and type
+    with open('schema.json', 'r') as f:
+        schema_descriptions = json.load(f)
+    for row in schema:
+        row['description'] = schema_descriptions.get(row['column'], '')
     return schema
