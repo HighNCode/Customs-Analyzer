@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Send, FileSpreadsheet, AlertCircle, CheckCircle, X, Menu } from 'lucide-react';
+import { Upload, Send, FileSpreadsheet, AlertCircle, CheckCircle, X, Menu, Download, Copy, Table } from 'lucide-react';
 
 const REQUIRED_COLUMNS = [
   'GD_NO_Complete', 'NTN', 'IMPORTER NAME', 'HS CODE', 'ITEM DESCRIPTION',
@@ -15,7 +15,6 @@ const API_BASE_URL = 'http://localhost:8000';
 // Helper function to render formatted message content
 const renderMessageContent = (content) => {
   return content.split('\n').map((line, i) => {
-    // Headers with emojis (like 📊 **Key Counts**)
     if (line.match(/^[📊📈💡⚠️🔍]\s\*\*.+\*\*$/)) {
       return (
         <div key={i} className="font-bold text-base mt-4 mb-2 text-blue-700 border-b border-blue-200 pb-1">
@@ -24,7 +23,6 @@ const renderMessageContent = (content) => {
       );
     }
     
-    // Bold text (like **Total Records**)
     if (line.includes('**')) {
       const parts = line.split('**');
       return (
@@ -36,7 +34,6 @@ const renderMessageContent = (content) => {
       );
     }
     
-    // Bullet points
     if (line.trim().startsWith('•') || line.trim().startsWith('-')) {
       return (
         <div key={i} className="ml-4 my-1 flex items-start">
@@ -46,7 +43,6 @@ const renderMessageContent = (content) => {
       );
     }
     
-    // Numbered lists
     if (line.match(/^\d+\.\s/)) {
       return (
         <div key={i} className="ml-4 my-1 flex items-start">
@@ -56,14 +52,102 @@ const renderMessageContent = (content) => {
       );
     }
     
-    // Section dividers
     if (line.trim() === '---') {
       return <hr key={i} className="my-3 border-gray-300" />;
     }
     
-    // Regular lines or empty lines
     return line.trim() ? <div key={i} className="my-1">{line}</div> : <br key={i} />;
   });
+};
+
+// Data Table Component
+const DataTable = ({ data, columns, resultId }) => {
+  const [showAll, setShowAll] = useState(false);
+  const displayData = showAll ? data : data.slice(0, 10);
+
+  const copyToClipboard = () => {
+    const headers = columns.join('\t');
+    const rows = data.map(row => columns.map(col => row[col] || '').join('\t')).join('\n');
+    const text = headers + '\n' + rows;
+    navigator.clipboard.writeText(text);
+    alert('Data copied to clipboard!');
+  };
+
+  const downloadFile = (format) => {
+    window.open(`${API_BASE_URL}/download/${resultId}?format=${format}`, '_blank');
+  };
+
+  return (
+    <div className="mt-4 border border-gray-200 rounded-lg overflow-hidden">
+      <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+        <div className="flex items-center">
+          <Table className="w-4 h-4 text-gray-600 mr-2" />
+          <span className="text-sm font-medium text-gray-700">
+            Data Results ({data.length} rows)
+          </span>
+        </div>
+        <div className="flex space-x-2">
+          <button
+            onClick={copyToClipboard}
+            className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 flex items-center"
+          >
+            <Copy className="w-3 h-3 mr-1" />
+            Copy
+          </button>
+          <button
+            onClick={() => downloadFile('csv')}
+            className="px-3 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 flex items-center"
+          >
+            <Download className="w-3 h-3 mr-1" />
+            CSV
+          </button>
+          <button
+            onClick={() => downloadFile('excel')}
+            className="px-3 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 flex items-center"
+          >
+            <Download className="w-3 h-3 mr-1" />
+            Excel
+          </button>
+        </div>
+      </div>
+      
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              {columns.map((col, idx) => (
+                <th key={idx} className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {displayData.map((row, rowIdx) => (
+              <tr key={rowIdx} className="hover:bg-gray-50">
+                {columns.map((col, colIdx) => (
+                  <td key={colIdx} className="px-4 py-2 text-sm text-gray-900 whitespace-nowrap">
+                    {row[col] !== null && row[col] !== undefined ? String(row[col]) : '-'}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      
+      {data.length > 10 && (
+        <div className="bg-gray-50 px-4 py-2 border-t border-gray-200 text-center">
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className="text-sm text-blue-600 hover:text-blue-800"
+          >
+            {showAll ? 'Show less' : `Show all ${data.length} rows`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 };
 
 export default function CustomsAnalysisPlatform() {
@@ -193,6 +277,7 @@ export default function CustomsAnalysisPlatform() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let accumulatedContent = '';
+      let metadata = null;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -209,6 +294,7 @@ export default function CustomsAnalysisPlatform() {
               const data = JSON.parse(dataStr);
               
               if (data.type === 'metadata') {
+                metadata = data;
                 accumulatedContent = `🔍 **Query Executed**\n• SQL: \`${data.sql}\`\n• Rows Retrieved: ${data.rows}\n\n📊 **Analysis**\n\n`;
               } else if (data.type === 'token') {
                 accumulatedContent += data.content;
@@ -220,12 +306,16 @@ export default function CustomsAnalysisPlatform() {
                 const newMessages = [...prev];
                 newMessages[messageIndex] = {
                   ...newMessages[messageIndex],
-                  content: accumulatedContent
+                  content: accumulatedContent,
+                  metadata: metadata,
+                  dataPreview: metadata?.data_preview,
+                  resultId: metadata?.result_id,
+                  columns: metadata?.columns,
+                  wantsData: metadata?.wants_data
                 };
                 return newMessages;
               });
             } catch (e) {
-              
               console.log('Parse error:', e);
             }
           }
@@ -281,7 +371,6 @@ export default function CustomsAnalysisPlatform() {
         <div className="p-6">
           <h2 className="text-xl font-bold text-gray-800 mb-6">Customs Data Analyzer</h2>
           
-          {/* API Connection Status */}
           <div className={`mb-4 p-3 rounded-lg ${apiConnected ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
             <div className="flex items-center">
               <div className={`w-2 h-2 rounded-full mr-2 ${apiConnected ? 'bg-green-500' : 'bg-red-500'}`}></div>
@@ -296,7 +385,6 @@ export default function CustomsAnalysisPlatform() {
             )}
           </div>
 
-          {/* File Upload Section */}
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Upload Excel File
@@ -325,7 +413,6 @@ export default function CustomsAnalysisPlatform() {
             </label>
           </div>
 
-          {/* Uploaded File Info */}
           {uploadedFile && (
             <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
               <div className="flex items-start justify-between">
@@ -346,7 +433,6 @@ export default function CustomsAnalysisPlatform() {
             </div>
           )}
 
-          {/* Validation Error */}
           {validationError && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
               <div className="flex items-start">
@@ -359,7 +445,6 @@ export default function CustomsAnalysisPlatform() {
             </div>
           )}
 
-          {/* Quick Actions */}
           <div className="space-y-2">
             <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">
               Quick Analysis
@@ -367,7 +452,7 @@ export default function CustomsAnalysisPlatform() {
             {[
               'Show top 10 importers',
               'Find price discrepancies',
-              'Analyze tax calculations',
+              'Give me audit prone cases',
               'Show unusual patterns',
               'Country-wise breakdown'
             ].map((action, idx) => (
@@ -388,7 +473,6 @@ export default function CustomsAnalysisPlatform() {
             ))}
           </div>
 
-          {/* Column Info */}
           <div className="mt-8 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <p className="text-xs font-medium text-blue-800 mb-2">Required Columns (21)</p>
             <div className="max-h-40 overflow-y-auto text-xs text-blue-700 space-y-1">
@@ -405,7 +489,6 @@ export default function CustomsAnalysisPlatform() {
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
-        {/* Header */}
         <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center">
             <button
@@ -424,7 +507,6 @@ export default function CustomsAnalysisPlatform() {
           )}
         </div>
 
-        {/* Messages */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {messages.length === 0 && !uploadedFile && (
             <div className="flex items-center justify-center h-full">
@@ -451,7 +533,7 @@ export default function CustomsAnalysisPlatform() {
               className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-3xl px-4 py-3 rounded-lg ${
+                className={`max-w-4xl w-full px-4 py-3 rounded-lg ${
                   message.role === 'user'
                     ? 'bg-blue-600 text-white'
                     : 'bg-white border border-gray-200 text-gray-800 shadow-sm'
@@ -459,6 +541,42 @@ export default function CustomsAnalysisPlatform() {
               >
                 <div className="text-sm leading-relaxed">
                   {renderMessageContent(message.content)}
+                  
+                  {/* Show data table if available */}
+                  {message.dataPreview && message.dataPreview.length > 0 && message.columns && (
+                    <DataTable 
+                      data={message.dataPreview} 
+                      columns={message.columns}
+                      resultId={message.resultId}
+                    />
+                  )}
+                  
+                  {/* Show download button if no preview but data exists */}
+                  {message.wantsData && !message.dataPreview && message.resultId && (
+                    <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-sm text-blue-800 mb-2">📥 Large dataset - Download available</p>
+                      <div className="flex space-x-2">
+                        <a
+                          href={`${API_BASE_URL}/download/${message.resultId}?format=csv`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 flex items-center"
+                        >
+                          <Download className="w-3 h-3 mr-1" />
+                          CSV
+                        </a>
+                        <a
+                          href={`${API_BASE_URL}/download/${message.resultId}?format=excel`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 flex items-center"
+                        >
+                          <Download className="w-3 h-3 mr-1" />
+                          Excel
+                        </a>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className={`text-xs mt-2 ${message.role === 'user' ? 'text-blue-200' : 'text-gray-500'}`}>
                   {message.timestamp}
@@ -483,7 +601,6 @@ export default function CustomsAnalysisPlatform() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input Area */}
         <div className="bg-white border-t border-gray-200 p-4">
           <div className="max-w-4xl mx-auto">
             <div className="flex items-end space-x-3">

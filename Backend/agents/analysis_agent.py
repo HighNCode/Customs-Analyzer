@@ -1,12 +1,11 @@
 # agents/analysis_agent.py
-from llm import stream_llm_analysis, stream_llm_analysis_fallback
+from llm import stream_llm_analysis
 import pandas as pd
 import numpy as np
+import re
 
 def analyze_data_stream(df: pd.DataFrame, user_query: str):
     
-    # just for cleaning, dont fucking change the dataframe
-
     if df.empty:
         yield "⚠️ No data returned for this query."
         return
@@ -15,13 +14,12 @@ def analyze_data_stream(df: pd.DataFrame, user_query: str):
         
         total_rows = len(df)
     
-        #this info is passed to frontend modified ab agay isko theek krna hay to parse and add line breaks
+        # Calculate statistics for numeric columns
         stats_summary = {}
         numeric_cols = df.select_dtypes(include=['number', 'int64', 'float64']).columns
         
         for col in numeric_cols:
             try:
-                
                 clean_col = df[col].dropna()
                 
                 if len(clean_col) > 0:
@@ -40,7 +38,7 @@ def analyze_data_stream(df: pd.DataFrame, user_query: str):
         # Get unique counts for text columns
         text_stats = {}
         text_cols = df.select_dtypes(include=['object']).columns
-        for col in text_cols[:5]:  # Limit to first 5 text columns this has to be decided how to handle large number of text columns
+        for col in text_cols[:5]:
             try:
                 text_stats[col] = {
                     'unique_count': int(df[col].nunique()),
@@ -49,20 +47,22 @@ def analyze_data_stream(df: pd.DataFrame, user_query: str):
             except:
                 continue
         
-        sample_size = min(30, len(df))  # Reduced to 30 for better performance this as well has to be discussed
+        # Increased sample size for better analysis
+        sample_size = min(100, len(df))
         data_sample = df.head(sample_size).fillna('NULL').to_dict(orient="records")
         
-        
+        # Build stats strings
         stats_str = ""
-        for col, stats in list(stats_summary.items())[:5]:  # Top 5 numeric columns
+        for col, stats in list(stats_summary.items())[:5]:
             stats_str += f"\n• {col}: Min={stats['min']:,.2f}, Max={stats['max']:,.2f}, Avg={stats['mean']:,.2f}"
         
         text_stats_str = ""
-        for col, stats in list(text_stats.items())[:3]:  # Top 3 text columns
+        for col, stats in list(text_stats.items())[:3]:
             text_stats_str += f"\n• {col}: {stats['unique_count']} unique values"
         
-        # Enhanced prompt with clearer instructions
-        prompt = f"""Analyze this customs import data and provide a brief, structured analysis.
+        # Enhanced prompt with explicit newline instructions
+        prompt = f"""You are an Expert on Post Custom Audit Analysis, You are given the information of Customs Import Stats of Pakistan ports, all the monetary value is dealt in PKR .
+                Analyze this customs import data. You MUST use proper newlines between all sections and bullet points.
 
 USER QUESTION: {user_query}
 
@@ -79,46 +79,67 @@ TEXT FIELD SUMMARY:{text_stats_str}
 SAMPLE DATA (first {sample_size} rows):
 {data_sample}
 
-PROVIDE A STRUCTURED ANALYSIS:
+PROVIDE YOUR ANALYSIS IN THIS EXACT FORMAT (with newlines after each line):
 
 📊 KEY COUNTS
-• Total records and important aggregate numbers (2-3 points)
+• [First count]
+• [Second count]
+• [Third count]
 
-📈 PATTERNS OBSERVED  
-• Notable trends or distributions in the data (2-3 points)
+📈 PATTERNS OBSERVED
+• [First pattern]
+• [Second pattern]
+• [Third pattern]
 
 ⚠️ ANOMALIES OR RED FLAGS
-• Any unusual findings or data quality issues (1-2 points)
+• [First anomaly]
+• [Second anomaly]
 
 💡 RECOMMENDATIONS
-• Actionable next steps based on findings (1-2 points)
+• [First recommendation]
+• [Second recommendation]
 
-RULES:
-- Keep total response under 20 lines
-- Use bullet points with • symbol
-- Include specific numbers from the data
-- Be direct and concise
-- Focus on the user's question: "{user_query}"
+CRITICAL FORMATTING RULES:
+1. Add TWO newlines after each section header (📊, 📈, ⚠️, 💡)
+2. Add ONE newline after each bullet point (•)
+3. Each section must be separated by a blank line
+4. Do NOT run sections together
+5. Be concise but informative
+6. Focus on: "{user_query}"
 
-Start immediately with 📊 KEY COUNTS."""
+Begin now with proper formatting:"""
 
         token_count = 0
         has_content = False
+        buffer = ""
+        previous_token = ""
         
         print("🔄 Starting analysis stream...")
+        
         for token in stream_llm_analysis(prompt):
             if token and token.strip():
                 has_content = True
                 token_count += 1
+                
+                # Smart newline insertion logic
+                # If we see an emoji header without newlines before it, add them
+                if re.match(r'^[📊📈💡⚠️🔍]', token) and previous_token and not previous_token.endswith('\n'):
+                    yield '\n\n'  # Add spacing before new section
+                
+                # If current token is a bullet and previous wasn't a newline, add one
+                if token.startswith('•') and previous_token and not previous_token.endswith('\n'):
+                    yield '\n'
+                
                 yield token
+                previous_token = token
         
         print(f"✅ Streamed {token_count} tokens")
         
         # If no content was streamed, use fallback
-        if not has_content:
-            print("⚠️ No content from streaming, using fallback...")
-            for token in stream_llm_analysis_fallback(prompt):
-                yield token
+        # if not has_content:
+        #     print("⚠️ No content from streaming, using fallback...")
+        #     for token in stream_llm_analysis_fallback(prompt):
+        #         yield token
                 
     except Exception as e:
         print(f"❌ Analysis error: {e}")
@@ -147,39 +168,3 @@ Start immediately with 📊 KEY COUNTS."""
 """
         except:
             yield "\n\n❌ Critical error in analysis. Please check backend logs."
-
-
-
-#below is the old implementation for analysis_agent.py
-# # agents/analysis_agent.py
-# from llm import stream_llm
-# import pandas as pd
-
-# def analyze_data_stream(df: pd.DataFrame, user_query: str):
-#     if df.empty:
-#         yield "No data returned for this query."
-#         return
-
-#     # Limit data size for better performance
-#     data_sample = df.head(100).to_dict(orient="records")
-    
-#     prompt = f"""
-# You are a data analysis assistant for customs import data.
-# Here is the user question:
-# {user_query}
-
-# Here is the returned data (showing first 100 rows if more exist):
-# Total rows: {len(df)}
-# {data_sample}
-
-# Provide:
-# - Summary of findings
-# - Patterns and trends
-# - Outliers or anomalies
-# - Any compliance issues or red flags
-# - Useful insights and recommendations
-# """
-
-#     # Yield tokens from LLM stream
-#     for token in stream_llm(prompt):
-#         yield token
