@@ -12,6 +12,60 @@ const REQUIRED_COLUMNS = [
 
 const API_BASE_URL = 'http://localhost:8000';
 
+// Helper function to render formatted message content
+const renderMessageContent = (content) => {
+  return content.split('\n').map((line, i) => {
+    // Headers with emojis (like 📊 **Key Counts**)
+    if (line.match(/^[📊📈💡⚠️🔍]\s\*\*.+\*\*$/)) {
+      return (
+        <div key={i} className="font-bold text-base mt-4 mb-2 text-blue-700 border-b border-blue-200 pb-1">
+          {line.replace(/\*\*/g, '')}
+        </div>
+      );
+    }
+    
+    // Bold text (like **Total Records**)
+    if (line.includes('**')) {
+      const parts = line.split('**');
+      return (
+        <div key={i} className="my-1">
+          {parts.map((part, idx) => 
+            idx % 2 === 1 ? <strong key={idx}>{part}</strong> : part
+          )}
+        </div>
+      );
+    }
+    
+    // Bullet points
+    if (line.trim().startsWith('•') || line.trim().startsWith('-')) {
+      return (
+        <div key={i} className="ml-4 my-1 flex items-start">
+          <span className="text-blue-600 mr-2">•</span>
+          <span>{line.replace(/^[•\-]\s*/, '')}</span>
+        </div>
+      );
+    }
+    
+    // Numbered lists
+    if (line.match(/^\d+\.\s/)) {
+      return (
+        <div key={i} className="ml-4 my-1 flex items-start">
+          <span className="text-blue-600 mr-2 font-semibold">{line.match(/^\d+\./)[0]}</span>
+          <span>{line.replace(/^\d+\.\s*/, '')}</span>
+        </div>
+      );
+    }
+    
+    // Section dividers
+    if (line.trim() === '---') {
+      return <hr key={i} className="my-3 border-gray-300" />;
+    }
+    
+    // Regular lines or empty lines
+    return line.trim() ? <div key={i} className="my-1">{line}</div> : <br key={i} />;
+  });
+};
+
 export default function CustomsAnalysisPlatform() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -79,7 +133,7 @@ export default function CustomsAnalysisPlatform() {
 
       const welcomeMessage = {
         role: 'assistant',
-        content: `✅ **File uploaded successfully and connected to AI!**\n\n**Data Summary:**\n- Total Records: ${summary.totalRows.toLocaleString()}\n- Unique Importers: ${summary.uniqueImporters.toLocaleString()}\n- Unique HS Codes: ${summary.uniqueHSCodes.toLocaleString()}\n- Origin Countries: ${summary.uniqueCountries.toLocaleString()}\n- Total Import Value: Rs ${summary.totalValue.toLocaleString(undefined, {maximumFractionDigits: 2})}\n- Total Customs Duty: Rs ${summary.totalDutyPaid.toLocaleString(undefined, {maximumFractionDigits: 2})}\n- Total Sales Tax: Rs ${summary.totalTaxPaid.toLocaleString(undefined, {maximumFractionDigits: 2})}\n\n🤖 **AI Analysis Ready!** I'm now connected to your DeepSeek LLM and ready to analyze this customs data.\n\nYou can ask me about:\n- Valuation discrepancies\n- Tax calculations and anomalies\n- Unusual patterns or suspicious entries\n- Specific importers or HS codes\n- Country-wise analysis\n- Compliance issues\n- And much more!`,
+        content: `✅ **File uploaded successfully!**\n\n📊 **Data Summary**\n• Total Records: ${summary.totalRows.toLocaleString()}\n• Unique Importers: ${summary.uniqueImporters.toLocaleString()}\n• Unique HS Codes: ${summary.uniqueHSCodes.toLocaleString()}\n• Origin Countries: ${summary.uniqueCountries.toLocaleString()}\n• Total Import Value: Rs ${summary.totalValue.toLocaleString(undefined, {maximumFractionDigits: 2})}\n• Total Customs Duty: Rs ${summary.totalDutyPaid.toLocaleString(undefined, {maximumFractionDigits: 2})}\n• Total Sales Tax: Rs ${summary.totalTaxPaid.toLocaleString(undefined, {maximumFractionDigits: 2})}\n\n🤖 **AI Ready!** Ask me about valuation discrepancies, tax anomalies, patterns, compliance issues, or specific importers.`,
         timestamp: new Date().toLocaleTimeString()
       };
 
@@ -87,7 +141,7 @@ export default function CustomsAnalysisPlatform() {
       setIsProcessing(false);
       setApiConnected(true);
     } catch (error) {
-      setValidationError(`Network error: ${error.message}. Make sure the backend is running on ${API_BASE_URL}`);
+      setValidationError(`Network error: ${error.message}. Make sure backend is running.`);
       setIsProcessing(false);
       setApiConnected(false);
     }
@@ -111,7 +165,6 @@ export default function CustomsAnalysisPlatform() {
     setInput('');
     setIsProcessing(true);
 
-    // Add a placeholder message for streaming
     const placeholderMessage = {
       role: 'assistant',
       content: '',
@@ -119,7 +172,7 @@ export default function CustomsAnalysisPlatform() {
       isStreaming: true
     };
     setMessages(prev => [...prev, placeholderMessage]);
-    const messageIndex = messages.length + 1; // +1 because we just added user message
+    const messageIndex = messages.length + 1;
 
     try {
       const response = await fetch(`${API_BASE_URL}/query`, {
@@ -140,8 +193,6 @@ export default function CustomsAnalysisPlatform() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let accumulatedContent = '';
-      let sqlQuery = '';
-      let rowCount = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -152,41 +203,35 @@ export default function CustomsAnalysisPlatform() {
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
-            const content = line.slice(6); // Remove 'data: ' prefix
+            const dataStr = line.slice(6);
+            
+            try {
+              const data = JSON.parse(dataStr);
+              
+              if (data.type === 'metadata') {
+                accumulatedContent = `🔍 **Query Executed**\n• SQL: \`${data.sql}\`\n• Rows Retrieved: ${data.rows}\n\n📊 **Analysis**\n\n`;
+              } else if (data.type === 'token') {
+                accumulatedContent += data.content;
+              } else if (data.type === 'done') {
+                setIsProcessing(false);
+              }
 
-            if (content === '[DONE]') {
-              setIsProcessing(false);
-              continue;
+              setMessages(prev => {
+                const newMessages = [...prev];
+                newMessages[messageIndex] = {
+                  ...newMessages[messageIndex],
+                  content: accumulatedContent
+                };
+                return newMessages;
+              });
+            } catch (e) {
+              
+              console.log('Parse error:', e);
             }
-
-            if (content.startsWith('SQL: ')) {
-              sqlQuery = content.slice(5);
-              accumulatedContent += `\n**SQL Query:**\n\`\`\`sql\n${sqlQuery}\n\`\`\`\n\n`;
-            } else if (content.startsWith('Rows: ')) {
-              rowCount = content.slice(6);
-              accumulatedContent += `**Rows Retrieved:** ${rowCount}\n\n**Analysis:**\n\n`;
-            } else if (content.startsWith('Data: ')) {
-              // Skip the raw data, just note we're starting analysis
-              continue;
-            } else if (content.trim()) {
-              // This is the streaming LLM response
-              accumulatedContent += content;
-            }
-
-            // Update the message in real-time
-            setMessages(prev => {
-              const newMessages = [...prev];
-              newMessages[messageIndex] = {
-                ...newMessages[messageIndex],
-                content: accumulatedContent
-              };
-              return newMessages;
-            });
           }
         }
       }
 
-      // Mark streaming as complete
       setMessages(prev => {
         const newMessages = [...prev];
         newMessages[messageIndex] = {
@@ -200,7 +245,7 @@ export default function CustomsAnalysisPlatform() {
     } catch (error) {
       const errorMessage = {
         role: 'assistant',
-        content: `❌ **Error:** ${error.message}\n\nPlease make sure:\n1. The backend server is running (python main.py)\n2. Ollama is running (ollama serve)\n3. DeepSeek model is available (ollama list)`,
+        content: `❌ **Error:** ${error.message}\n\nMake sure:\n• Backend is running\n• OpenRouter API key is set`,
         timestamp: new Date().toLocaleTimeString()
       };
       setMessages(prev => {
@@ -246,7 +291,7 @@ export default function CustomsAnalysisPlatform() {
             </div>
             {!apiConnected && (
               <p className="text-xs text-red-600 mt-1">
-                Run: python main.py
+                Run: uvicorn main:app --reload
               </p>
             )}
           </div>
@@ -320,10 +365,10 @@ export default function CustomsAnalysisPlatform() {
               Quick Analysis
             </p>
             {[
-              'Show valuation discrepancies',
+              'Show top 10 importers',
+              'Find price discrepancies',
               'Analyze tax calculations',
-              'Find suspicious patterns',
-              'Top importers analysis',
+              'Show unusual patterns',
               'Country-wise breakdown'
             ].map((action, idx) => (
               <button
@@ -389,11 +434,11 @@ export default function CustomsAnalysisPlatform() {
                   Welcome to AI-Powered Customs Analyzer
                 </h3>
                 <p className="text-sm text-gray-600 mb-4">
-                  Upload your customs Excel file to begin AI-assisted analysis. The system will help you with post-custom audits, identify discrepancies, and provide intelligent insights.
+                  Upload your customs Excel file to begin AI-assisted analysis.
                 </p>
                 {!apiConnected && (
                   <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-800">
-                    ⚠️ Backend not connected. Make sure to run: <code className="bg-yellow-100 px-1 py-0.5 rounded">python main.py</code>
+                    ⚠️ Backend not connected. Run: <code className="bg-yellow-100 px-1 py-0.5 rounded">uvicorn main:app --reload</code>
                   </div>
                 )}
               </div>
@@ -409,25 +454,11 @@ export default function CustomsAnalysisPlatform() {
                 className={`max-w-3xl px-4 py-3 rounded-lg ${
                   message.role === 'user'
                     ? 'bg-blue-600 text-white'
-                    : 'bg-white border border-gray-200 text-gray-800'
+                    : 'bg-white border border-gray-200 text-gray-800 shadow-sm'
                 }`}
               >
-                <div className="whitespace-pre-wrap text-sm" style={{lineHeight: '1.6'}}>
-                  {message.content.split('\n').map((line, i) => {
-                    if (line.startsWith('**') && line.endsWith('**')) {
-                      return <div key={i} className="font-semibold mt-2 mb-1">{line.slice(2, -2)}</div>;
-                    }
-                    if (line.startsWith('- ')) {
-                      return <div key={i} className="ml-4">{line}</div>;
-                    }
-                    if (line.startsWith('# ')) {
-                      return <div key={i} className="text-lg font-bold mt-3 mb-2">{line.slice(2)}</div>;
-                    }
-                    if (line.startsWith('## ')) {
-                      return <div key={i} className="text-base font-bold mt-2 mb-1">{line.slice(3)}</div>;
-                    }
-                    return <div key={i}>{line || <br />}</div>;
-                  })}
+                <div className="text-sm leading-relaxed">
+                  {renderMessageContent(message.content)}
                 </div>
                 <div className={`text-xs mt-2 ${message.role === 'user' ? 'text-blue-200' : 'text-gray-500'}`}>
                   {message.timestamp}
@@ -443,7 +474,7 @@ export default function CustomsAnalysisPlatform() {
                   <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{animationDelay: '0ms'}}></div>
                   <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{animationDelay: '150ms'}}></div>
                   <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{animationDelay: '300ms'}}></div>
-                  <span className="text-sm text-gray-600 ml-2">AI is analyzing...</span>
+                  <span className="text-sm text-gray-600 ml-2">AI analyzing...</span>
                 </div>
               </div>
             </div>
@@ -461,10 +492,10 @@ export default function CustomsAnalysisPlatform() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyPress={handleKeyPress}
-                  placeholder={sessionId ? "Ask me anything about the customs data..." : "Upload an Excel file to start..."}
+                  placeholder={sessionId ? "Ask about customs data..." : "Upload file to start..."}
                   disabled={!sessionId}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:bg-gray-100 disabled:cursor-not-allowed"
-                  rows="3"
+                  rows="2"
                 />
               </div>
               <button
@@ -476,7 +507,7 @@ export default function CustomsAnalysisPlatform() {
               </button>
             </div>
             <p className="text-xs text-gray-500 mt-2">
-              Press Enter to send • Shift+Enter for new line • Powered by DeepSeek AI
+              Enter to send • Shift+Enter for new line • Powered by DeepSeek AI
             </p>
           </div>
         </div>

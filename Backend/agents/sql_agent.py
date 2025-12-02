@@ -1,5 +1,5 @@
 # agents/sql_agent.py
-from llm import call_llm, generate_llm_response
+from llm import generate_llm_response
 from db import engine, get_schema
 import pandas as pd
 from sqlalchemy import text
@@ -35,9 +35,7 @@ def generate_sql(schema, user_query: str):
     return generate_llm_response(system_prompt, user_query)
 
 def sanitize_sql(sql: str) -> str:
-    """
-    Remove extra backslashes and whitespace from multi-line SQL returned by LLM.
-    """
+    
     # Remove any literal backslashes at the end of lines
     lines = [line.rstrip(" \\") for line in sql.splitlines()]
     # Join lines into a single string
