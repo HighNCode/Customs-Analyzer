@@ -5,3 +5,4 @@ __pycache__/
 venv/
 Sample.xlsx
 .env
+/visualizations/

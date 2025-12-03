@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Upload, Send, FileSpreadsheet, AlertCircle, CheckCircle, X, Menu, Download, Copy, Table } from 'lucide-react';
+import { Upload, Send, FileSpreadsheet, AlertCircle, CheckCircle, X, Menu, Download, Copy, Table, BarChart3, Loader } from 'lucide-react';
 
 const REQUIRED_COLUMNS = [
   'GD_NO_Complete', 'NTN', 'IMPORTER NAME', 'HS CODE', 'ITEM DESCRIPTION',
@@ -150,6 +150,196 @@ const DataTable = ({ data, columns, resultId }) => {
   );
 };
 
+// Add this component before your CustomsAnalysisPlatform component
+
+const VisualizationModal = ({ isOpen, onClose, resultId, queryText }) => {
+  const [imageUrl, setImageUrl] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [hasGenerated, setHasGenerated] = useState(false);
+
+  const handleGenerateVisualization = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/generate-visualization/${resultId}`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate visualization');
+      }
+
+      const data = await response.json();
+      setImageUrl(`${API_BASE_URL}/visualization/${resultId}?t=${Date.now()}`);
+      setHasGenerated(true);
+      setIsLoading(false);
+    } catch (err) {
+      setError(err.message);
+      setIsLoading(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (imageUrl) {
+      try {
+        // Fetch the image as a blob
+        const response = await fetch(imageUrl);
+        const blob = await response.blob();
+        
+        // Create a download link
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `visualization_${resultId}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Clean up the blob URL
+        window.URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error('Download failed:', error);
+        // Fallback to opening in new tab
+        window.open(imageUrl, '_blank');
+      }
+    }
+  };
+
+  const handleClose = () => {
+    setImageUrl(null);
+    setHasGenerated(false);
+    setError(null);
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center space-x-3">
+            <BarChart3 className="w-6 h-6 text-blue-600" />
+            <div>
+              <h2 className="text-xl font-semibold text-gray-800">
+                Data Visualization
+              </h2>
+              {queryText && (
+                <p className="text-sm text-gray-500 mt-0.5">
+                  {queryText.length > 60 ? `${queryText.substring(0, 60)}...` : queryText}
+                </p>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={handleClose}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {!hasGenerated && !isLoading && !error && (
+            <div className="flex flex-col items-center justify-center h-full min-h-[400px] space-y-4">
+              <BarChart3 className="w-16 h-16 text-gray-300" />
+              <div className="text-center">
+                <h3 className="text-lg font-medium text-gray-800 mb-2">
+                  Generate Visualization
+                </h3>
+                <p className="text-sm text-gray-600 mb-4 max-w-md">
+                  Click the button below to generate a visual representation of your data analysis.
+                </p>
+                <button
+                  onClick={handleGenerateVisualization}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                  Generate Chart
+                </button>
+              </div>
+            </div>
+          )}
+
+          {isLoading && (
+            <div className="flex flex-col items-center justify-center h-full min-h-[400px] space-y-4">
+              <Loader className="w-12 h-12 text-blue-600 animate-spin" />
+              <div className="text-center">
+                <h3 className="text-lg font-medium text-gray-800 mb-2">
+                  Generating Visualization...
+                </h3>
+                <p className="text-sm text-gray-600">
+                  Our AI is creating the perfect chart for your data
+                </p>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className="flex flex-col items-center justify-center h-full min-h-[400px] space-y-4">
+              <AlertCircle className="w-12 h-12 text-red-500" />
+              <div className="text-center">
+                <h3 className="text-lg font-medium text-red-800 mb-2">
+                  Generation Failed
+                </h3>
+                <p className="text-sm text-red-600 mb-4">
+                  {error}
+                </p>
+                <button
+                  onClick={handleGenerateVisualization}
+                  className="px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          )}
+
+          {imageUrl && !isLoading && (
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-lg p-4 border-2 border-gray-200">
+                <img
+                  src={imageUrl}
+                  alt="Data Visualization"
+                  className="w-full h-auto rounded"
+                  onError={() => setError('Failed to load image')}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {imageUrl && (
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+            <p className="text-sm text-gray-600">
+              Visualization generated successfully
+            </p>
+            <div className="flex space-x-3">
+              <button
+                onClick={handleDownload}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download PNG</span>
+              </button>
+              <button
+                onClick={handleClose}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 export default function CustomsAnalysisPlatform() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -161,6 +351,11 @@ export default function CustomsAnalysisPlatform() {
   const [apiConnected, setApiConnected] = useState(false);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const [visualizationModal, setVisualizationModal] = useState({
+    isOpen: false,
+    resultId: null,
+    queryText: ''
+  });
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -237,27 +432,33 @@ export default function CustomsAnalysisPlatform() {
       alert('Please upload an Excel file first.');
       return;
     }
-
+  
     const userMessage = {
       role: 'user',
       content: input,
       timestamp: new Date().toLocaleTimeString()
     };
-
+  
     setMessages(prev => [...prev, userMessage]);
     const userQuery = input;
     setInput('');
     setIsProcessing(true);
-
+  
     const placeholderMessage = {
       role: 'assistant',
       content: '',
       timestamp: new Date().toLocaleTimeString(),
-      isStreaming: true
+      isStreaming: true,
+      metadata: null,
+      resultId: null,
+      columns: null,
+      dataPreview: null,
+      wantsData: false,
+      hasVisualization: false
     };
     setMessages(prev => [...prev, placeholderMessage]);
     const messageIndex = messages.length + 1;
-
+  
     try {
       const response = await fetch(`${API_BASE_URL}/query`, {
         method: 'POST',
@@ -269,23 +470,23 @@ export default function CustomsAnalysisPlatform() {
           session_id: sessionId
         }),
       });
-
+  
       if (!response.ok) {
         throw new Error('Failed to get response from API');
       }
-
+  
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let accumulatedContent = '';
       let metadata = null;
-
+  
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
+  
         const chunk = decoder.decode(value, { stream: true });
         const lines = chunk.split('\n');
-
+  
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const dataStr = line.slice(6);
@@ -296,32 +497,54 @@ export default function CustomsAnalysisPlatform() {
               if (data.type === 'metadata') {
                 metadata = data;
                 accumulatedContent = `🔍 **Query Executed**\n• SQL: \`${data.sql}\`\n• Rows Retrieved: ${data.rows}\n\n📊 **Analysis**\n\n`;
+                
+                // Update message with metadata immediately
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  newMessages[messageIndex] = {
+                    ...newMessages[messageIndex],
+                    content: accumulatedContent,
+                    metadata: metadata,
+                    resultId: data.result_id,
+                    columns: data.columns,
+                    dataPreview: data.data_preview,
+                    wantsData: data.wants_data,
+                    hasVisualization: data.has_visualization
+                  };
+                  return newMessages;
+                });
               } else if (data.type === 'token') {
                 accumulatedContent += data.content;
+                
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  newMessages[messageIndex] = {
+                    ...newMessages[messageIndex],
+                    content: accumulatedContent
+                  };
+                  return newMessages;
+                });
+              } else if (data.type === 'visualization_ready') {
+                // Mark visualization as ready
+                setMessages(prev => {
+                  const newMessages = [...prev];
+                  newMessages[messageIndex] = {
+                    ...newMessages[messageIndex],
+                    hasVisualization: true,
+                    visualizationReady: true
+                  };
+                  return newMessages;
+                });
               } else if (data.type === 'done') {
                 setIsProcessing(false);
               }
-
-              setMessages(prev => {
-                const newMessages = [...prev];
-                newMessages[messageIndex] = {
-                  ...newMessages[messageIndex],
-                  content: accumulatedContent,
-                  metadata: metadata,
-                  dataPreview: metadata?.data_preview,
-                  resultId: metadata?.result_id,
-                  columns: metadata?.columns,
-                  wantsData: metadata?.wants_data
-                };
-                return newMessages;
-              });
             } catch (e) {
               console.log('Parse error:', e);
             }
           }
         }
       }
-
+  
       setMessages(prev => {
         const newMessages = [...prev];
         newMessages[messageIndex] = {
@@ -331,7 +554,7 @@ export default function CustomsAnalysisPlatform() {
         return newMessages;
       });
       setIsProcessing(false);
-
+  
     } catch (error) {
       const errorMessage = {
         role: 'assistant',
@@ -577,6 +800,31 @@ export default function CustomsAnalysisPlatform() {
                       </div>
                     </div>
                   )}
+
+                  {/* Show visualization button - ALWAYS show if resultId exists */}
+                  {Boolean(message?.resultId) &&
+                    message.role === 'assistant' &&
+                    typeof message?.content === "string" && (
+                    <div className="mt-3">
+                      <button
+                        onClick={() => setVisualizationModal({
+                          isOpen: true,
+                          resultId: message.resultId,
+                          queryText:
+                            typeof messages[idx - 1]?.content === "string"
+                                ? messages[idx - 1].content
+                                : "Data Analysis"
+                        })}
+                        disabled={message.isStreaming}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <BarChart3 className="w-4 h-4" />
+                        <span>
+                          {message.visualizationReady ? 'View Chart' : 'Generate Chart'}
+                        </span>
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className={`text-xs mt-2 ${message.role === 'user' ? 'text-blue-200' : 'text-gray-500'}`}>
                   {message.timestamp}
@@ -629,6 +877,15 @@ export default function CustomsAnalysisPlatform() {
           </div>
         </div>
       </div>
+      {/* Visualization Modal */}
+      {visualizationModal.isOpen && visualizationModal.resultId && (
+        <VisualizationModal
+          isOpen={visualizationModal.isOpen}
+          onClose={() => setVisualizationModal({ isOpen: false, resultId: null, queryText: '' })}
+          resultId={visualizationModal.resultId}
+          queryText={visualizationModal.queryText || "Data Analysis"}
+        />
+      )}
     </div>
   );
 }

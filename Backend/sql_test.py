@@ -13,10 +13,10 @@ def run_query_on_customs_db(sql_query: str):
     finally:
         conn.close()
 
-# if __name__ == "__main__":
-#     query = """
-#     SELECT * FROM customs WHERE "HS CODE" = '8513.101'
-#     """
-#     # query = input("Enter your SQL query: ")
-#     df = run_query_on_customs_db(query)
+if __name__ == "__main__":
+    query = """
+    SELECT 'GD_NO_Complete', 'ASSD UNIT PRICE', 'ASSD CURR', 'HS CODE', 'ITEM DESCRIPTION' FROM customs WHERE 'HS CODE' = '8513.101';
+    """
+    # query = input("Enter your SQL query: ")
+    df = run_query_on_customs_db(query)
 

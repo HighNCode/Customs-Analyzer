@@ -7,11 +7,16 @@ from agents.sql_agent import generate_sql, sanitize_sql
 from agents.analysis_agent import analyze_data_stream
 import pandas as pd
 from sqlalchemy import text
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse, Response, FileResponse
 from io import BytesIO
+import os
 import json
 import hashlib
 from datetime import datetime
+import numpy as np
+
+from agents.visualization_agent import generate_visualization_code
+from utility.utils import execute_visualization_code
 
 app = FastAPI()
 
@@ -81,7 +86,7 @@ def detect_data_request(query: str) -> bool:
 @app.post("/query")
 def run_query_stream(req: QueryRequest):
     """
-    Main query endpoint with data export capability
+    Main query endpoint with automatic visualization
     """
     user_query = req.question.strip()
     session_id = req.session_id
@@ -114,31 +119,34 @@ def run_query_stream(req: QueryRequest):
         print(f"❌ {error_msg}")
         raise HTTPException(500, error_msg)
 
-    # Store result in cache for download
+    # Store result in cache
     result_id = hashlib.md5(f"{user_query}{datetime.now().isoformat()}".encode()).hexdigest()
     query_results_cache[result_id] = df.copy()
     
     # Detect if user wants specific data
     wants_data = detect_data_request(user_query)
     
-    # Handle NULL values for JSON serialization
+    # Handle NULL values
     df = df.where(pd.notnull(df), None)
+    df_clean = df.replace({np.nan: None, np.inf: None, -np.inf: None})
 
-    # Stream analysis
+    # Stream analysis and visualization
     def event_generator():
-        # Send metadata with result_id and data preview
+        # Send metadata
         metadata = {
             "type": "metadata", 
             "sql": sql.replace('"', "'"), 
             "rows": len(df),
             "result_id": result_id,
             "wants_data": wants_data,
-            "columns": df.columns.tolist()
+            "columns": df.columns.tolist(),
+            "has_visualization": True
         }
         
         # If small dataset and user wants data, include preview
         if wants_data and len(df) <= 50:
-            preview_df = df.head(50).copy()
+            preview_df = df_clean.head(50).copy()
+            # Convert to dict with proper null handling
             metadata["data_preview"] = preview_df.to_dict(orient="records")
         
         yield f"data: {json.dumps(metadata)}\n\n"
@@ -147,11 +155,13 @@ def run_query_stream(req: QueryRequest):
         # Stream analysis tokens
         print("🔄 Starting analysis stream...\n")
         token_count = 0
+        analysis_text = ""
         
         try:
             for token in analyze_data_stream(df, user_query):
                 if token:
                     token_count += 1
+                    analysis_text += token
                     
                     token_json = json.dumps({
                         "type": "token",
@@ -165,10 +175,52 @@ def run_query_stream(req: QueryRequest):
             
             print(f"\n✅ Analysis complete - Total tokens: {token_count}")
             
+            # Generate visualization code
+            print("🔄 Generating visualization code...")
+
+            viz_code = generate_visualization_code(df, user_query, analysis_text)
+
+            # Clean up code if it has markdown formatting
+            if "```python" in viz_code:
+                viz_code = viz_code.split("```python")[1].split("```")[0].strip()
+            elif "```" in viz_code:
+                viz_code = viz_code.split("```")[1].split("```")[0].strip()
+
+            # --- Sanitize visualization code (fix Windows smart chars) ---
+            replacements = {
+                "“": '"', "”": '"',
+                "‘": "'", "’": "'",
+                "–": "-", "—": "-",
+                "•": "*",
+                "…": "..."
+            }
+
+            for bad, good in replacements.items():
+                viz_code = viz_code.replace(bad, good)
+
+            # Ensure UTF-8 encoding header for Python
+            if not viz_code.startswith("# -*- coding: utf-8 -*-"):
+                viz_code = "# -*- coding: utf-8 -*-\n" + viz_code
+            # --------------------------------------------------------------
+
+            print(f"✅ Generated visualization code ({len(viz_code)} chars)\n")
+
+            # Store visualization code
+            query_results_cache[f"{result_id}_viz_code"] = viz_code
+            
+            # Send visualization ready signal
+            viz_ready_json = json.dumps({
+                "type": "visualization_ready",
+                "result_id": result_id
+            })
+            yield f"data: {viz_ready_json}\n\n"
+            
+            print("✅ Visualization code generated and cached")
+            
         except Exception as e:
             print(f"❌ Streaming error: {e}")
             error_json = json.dumps({
-                "type": "token",
+                "type": "error",
                 "content": f"\n\n⚠️ Error: {str(e)}"
             })
             yield f"data: {error_json}\n\n"
@@ -226,3 +278,48 @@ async def download_result(result_id: str, format: str = "excel"):
     
     else:
         raise HTTPException(400, "Invalid format. Use 'excel', 'csv', or 'json'")
+
+@app.post("/generate-visualization/{result_id}")
+def generate_visualization(result_id: str):
+    """
+    Execute visualization code and return image path
+    """
+    # Get cached data and code
+    df = query_results_cache.get(result_id)
+    viz_code = query_results_cache.get(f"{result_id}_viz_code")
+    
+    if df is None:
+        raise HTTPException(404, "Result not found")
+    
+    if viz_code is None:
+        raise HTTPException(404, "Visualization code not found")
+    
+    try:
+        print(f"🔄 Executing visualization for result {result_id}...")
+        image_path = execute_visualization_code(viz_code, df)
+        print(f"✅ Visualization created: {image_path}")
+        
+        # Store image path in cache
+        query_results_cache[f"{result_id}_viz_image"] = image_path
+        
+        return {
+            "success": True,
+            "image_path": image_path,
+            "result_id": result_id
+        }
+    
+    except Exception as e:
+        print(f"❌ Visualization generation failed: {e}")
+        raise HTTPException(500, f"Visualization generation failed: {str(e)}")
+
+@app.get("/visualization/{result_id}")
+def get_visualization(result_id: str):
+    """
+    Serve the generated visualization image
+    """
+    image_path = query_results_cache.get(f"{result_id}_viz_image")
+    
+    if not image_path or not os.path.exists(image_path):
+        raise HTTPException(404, "Visualization not found")
+    
+    return FileResponse(image_path, media_type="image/png")
